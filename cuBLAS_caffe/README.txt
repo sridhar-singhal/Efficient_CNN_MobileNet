@@ -26,8 +26,17 @@ https://medium.com/nodeflux/demystifying-convolution-in-popular-deep-learning-fr
 GEMM and Convolution
 https://petewarden.com/2015/04/20/why-gemm-is-at-the-heart-of-deep-learning/
 
+Transpose of a matrix in cuBLAS
+https://stackoverflow.com/questions/15458552/what-is-the-most-efficient-way-to-transpose-a-matrix-in-cuda
 
-
+How to GEMM using cuBLAS on row major matrices
+1. Col major storage is transposed row major. 
+2. We can call matrix multiplication of transposed matrices directly from the GEMM command. Although take care of dimensions then.
+3. The output is stored in col major format, so we need transposed output.
+4. (AB)' = B'A'.
+5. Since, we assume B to col major already, B' is actually the row major matrix B, which is exactly what we need, without any inversion!!.
+https://stackoverflow.com/questions/56043539/cublassgemm-row-major-multiplication
+Check that out for more info. Implemented in example_gemm2.cu
 
 MISC
 Verify that CUDA is installed
