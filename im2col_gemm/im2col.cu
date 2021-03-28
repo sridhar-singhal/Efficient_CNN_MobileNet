@@ -1,4 +1,4 @@
-%%cuda --name im2col.cu
+//%%cuda --name im2col.cu
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
@@ -6,7 +6,9 @@
 #include <time.h>
      
    
-
+//h and w are widths of the input matrix (of each channel)
+//c is the number of channels
+//s is the size of the kernel
 __global__ void Im2Col_optimised(float *A, float *B,int h,int w,int c,int s)
 {
     int blockNum = blockIdx.z * (gridDim.y * gridDim.x) + blockIdx.x * gridDim.y +blockIdx.y;
@@ -173,17 +175,18 @@ int main(void)
             exit(EXIT_FAILURE);
         }
 
-
+//Verification part
+/*
 
         // Verify that the result vector is correct
         float A[height][width][channel];
         float check[size_kernel*size_kernel*channel][converted_h*converted_w];
 
-/*
-        float **check=(float **)malloc(converted_h*sizeof(float *));
-        for(int i=0;i<converted_h;i++)
-            check[i]=(float *)malloc(converted_w*sizeof(float));
-*/
+
+        // float **check=(float **)malloc(converted_h*sizeof(float *));
+        // for(int i=0;i<converted_h;i++)
+        //     check[i]=(float *)malloc(converted_w*sizeof(float));
+
         for(int gid=0;gid<numElements;gid++)
         {
             int k=gid/(height*width);
@@ -240,7 +243,7 @@ int main(void)
             printf("Failure!!\n");
 
 
-
+*/
 
 
 
