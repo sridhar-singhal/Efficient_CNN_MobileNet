@@ -68,7 +68,7 @@ int main(void)
     // Print the vector length to be used, and compute its size
     int length1,length2,width1,width2;
 
-    / Input the length and width of the matrices
+    // Input the length and width of the matrices
     printf("Enter values of length1,width1,length2,width2:");
     scanf("%d %d %d %d",&length1,&width1,&length2,&width2);
 
