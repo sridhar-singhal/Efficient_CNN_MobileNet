@@ -179,7 +179,7 @@ int main(void)
   // Launch the GEMM CUDA Kernel
 
   //Define block and grid dimensions
-  dim3 block(32,32,1);
+  dim3 block(32,4,1);
   dim3 grid(max(length1,length2)/32 + 1,max(width1,width2)/32 + 1,1);
 
   //Use cuda events to determine time taken
