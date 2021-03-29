@@ -117,7 +117,7 @@ int main(void) {
 
     //grid and block dimensions
     dim3 block(32, 8, 4);
-    dim3 grid(4, 32, 8);
+    dim3 grid(32, 32, 32);
 
     //to record the time consumed for im2col operation
     cudaEvent_t start, stop;
@@ -205,7 +205,6 @@ int main(void) {
         printf("Success!!\n");
     else
         printf("Failure!!\n");
-
 
     // Free device global memory
     err = cudaFree(d_A);
