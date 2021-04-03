@@ -69,6 +69,69 @@ __global__ void Im2Col_optimised(float * A, float * B, int h, int w, int c, int 
 
 }
 
+int Im2Col_driver(float* A, float** m_B, int height, int width, int channel, int size_kernel)
+{
+    //It is assumed that A is already allocated in the device memory, B is not allocated. If A is not allocated, this code returns with a faliure. 
+    //Each Block in Im2Col copies one row of length W into shared memory, maximum size 1024, put up a check
+    cudaError_t err = cudaSuccess;
+    float* B = NULL;
+    if(width>1024)
+    {
+        fprintf(stderr, "Error: Width larger than shared memory allowable\n");
+        return 0;
+    }
+    if (A == NULL)
+    {
+        fprintf(stderr, "Error: Input Array Memory not allocated\n");
+        return 0;
+    }
+        printf("Core Dumped?\n");
+    if (*m_B == NULL)
+    {
+        // int numElements = height * width * channel;
+
+        //starting point of kernel moves from [0][0] to [converted_h-1][converted_w-1]
+        int converted_h = height - size_kernel + 1;
+        int converted_w = width - size_kernel + 1;
+
+        //total number of elements in the final output matrix
+        int converted_numElements = converted_h * converted_w * channel * size_kernel * size_kernel;
+
+        // size_t size = numElements * sizeof(float);
+        size_t converted_size = converted_numElements * sizeof(float);
+
+        err = cudaMalloc((void ** ) &B, converted_size);
+
+        if (err != cudaSuccess) 
+        {
+            fprintf(stderr, "Failed to allocate device vector B (error code %s)!\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+        // printf("Allocated B\n");
+         *m_B = B;
+
+    }
+    else 
+        B = *m_B;
+
+
+
+    dim3 block(width, 1, 1);
+    dim3 grid(1, height, channel);
+
+    Im2Col_optimised << < grid, block >>> (A, B, height, width, channel, size_kernel);
+
+    err = cudaGetLastError();
+
+    if (err != cudaSuccess) {
+        fprintf(stderr, "Failed to launch Im2Col_optimised kernel (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+    // printf("B = %x\n",B);
+    return 1;
+
+}
+
 int main(void) {
     // Error code to check return values for CUDA calls
     cudaError_t err = cudaSuccess;
@@ -121,12 +184,12 @@ int main(void) {
 
     // Allocate the device output vector B
     float * d_B = NULL;
-    err = cudaMalloc((void ** ) & d_B, converted_size);
+    // err = cudaMalloc((void ** ) & d_B, converted_size);
 
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed to allocate device vector B (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
+    // if (err != cudaSuccess) {
+    //     fprintf(stderr, "Failed to allocate device vector B (error code %s)!\n", cudaGetErrorString(err));
+    //     exit(EXIT_FAILURE);
+    // }
 
     // Copy the host input vector A in host memory to the device input vectors in device memory
     err = cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
@@ -148,7 +211,12 @@ int main(void) {
     cudaEventRecord(start);
 
     // Launch the Im2Col CUDA Kernel
-    Im2Col_optimised << < grid, block >>> (d_A, d_B, height, width, channel, size_kernel);
+    //Im2Col_optimised << < grid, block >>> (d_A, d_B, height, width, channel, size_kernel);
+
+    //https://stackoverflow.com/questions/1398307/how-can-i-allocate-memory-and-return-it-via-a-pointer-parameter-to-the-calling
+    Im2Col_driver(d_A,&d_B,height,width,channel,size_kernel);
+
+    // printf("d_B = %x\n",d_B);
 
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
