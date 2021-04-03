@@ -19,6 +19,9 @@
     sdata [tid] += sdata [tid + 2];
     sdata [tid] += sdata [tid + 1];
 }*/
+//Misaligned data acceses are not as problematic in modern GPUs due to larger L1 Cache width
+//https://developer.nvidia.com/blog/how-access-global-memory-efficiently-cuda-c-kernels/#:~:text=Misaligned%20Data%20Accesses&text=Arrays%20allocated%20in%20device%20memory,are%20aligned%20to%20their%20size.
+
 __global__ void avgPoolKernel(float*A, float*B, int threadsPerMat, int nearest_2)
 {   
     //threadsPerMat is equal to size of each matrix
@@ -99,6 +102,16 @@ __global__ void avgPoolKernel(float*A, float*B, int threadsPerMat, int nearest_2
     //Divide by ThreadsperMat at the end, and return in the array required.
 }
 
+
+//We try to access memory in strides, but we have to put an if condition to write in proper locations. 
+//i.e. we did not have too many if conditions before, but uncoalesced memory accesses. 
+//Now we will have too many if else conditions initially.
+//We can assume that the inputs are of small size, <12X12 or even 15X15. In this case we will try to club as many blocks as we can such that we get full 32.
+
+// __global__ avgPoolKernelV2(float*A, float*B, int threadsPerMat, int nearest_2)
+// {
+
+// }
 
 void avgPool(int width, int height, int channels, float* hA, float* hB, float* dA, float* dB)
 {
