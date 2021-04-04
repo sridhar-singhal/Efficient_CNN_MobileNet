@@ -1,6 +1,4 @@
-//Code for pointwise convolution
-//Command to Compile:
-//nvcc -lcublas -o op pointwise_conv.cu
+//Library for pointwise convolution
 
 #include "../im2col_gemm/im2col_optimised.cuh"
 #include <cublas_v2.h>
@@ -111,7 +109,7 @@ int pointwise_kernelsToDevice(float** kernels, float** m_B, int channels, int op
 }	
 
 
-int main(int argc, char const *argv[])
+int pointwise_conv_example()
 {	
 	float *d_A = NULL, *d_B = NULL, *h_A = NULL, *h_B = NULL, *h_C = NULL;
 
@@ -252,6 +250,7 @@ int main(int argc, char const *argv[])
 
     free(h_A);
     free(h_B);
+    free(h_C);
     for (int i = 0; i < op_channels; ++i)
     {
     	temp = *(kernels + i);
