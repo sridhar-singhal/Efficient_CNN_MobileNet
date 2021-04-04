@@ -85,7 +85,7 @@ int Im2Col_driver(float* A, float** m_B, int height, int width, int channel, int
         fprintf(stderr, "Error: Input Array Memory not allocated\n");
         return 0;
     }
-        printf("Core Dumped?\n");
+        // printf("Core Dumped?\n");
     if (*m_B == NULL)
     {
         // int numElements = height * width * channel;
