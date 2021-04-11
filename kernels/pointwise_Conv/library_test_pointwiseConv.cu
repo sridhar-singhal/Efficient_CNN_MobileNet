@@ -4,8 +4,13 @@
 
 
 int main(int argc, char const *argv[])
-{
-	int value = pointwise_conv_example();
+{	
+	int height, width, channels, op_channels;
+	op_channels = 64;
+	channels = 64;
+	height = width = 32;
+	int verification = 1; //0 implies no verification
+	int value = pointwise_conv_example(height,width,channels,op_channels,verification);
 	if(value == 0)
 		printf("Done!!\n");
 	return 0;

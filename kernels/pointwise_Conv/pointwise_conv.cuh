@@ -47,16 +47,43 @@ int cuBlasGemm_rowMaj(float* A, float* B, float** op, int height_A, int width_A,
 int pointwise_convDriver(float* A, float** m_B, float* d_kernels, int height, int width, int channels, int op_channels)
 {
 	float* im2col_mat = NULL;
-	int success = Im2Col_driver(A,&im2col_mat,height,width,channels,1);
-	if (im2col_mat == NULL)
+    
+    // cudaEvent_t start, stop;
+    // float milliseconds = 0;
+
+    // cudaEventCreate( & start);
+    // cudaEventCreate( & stop);
+    // cudaEventRecord(start);
+    
+    int success = Im2Col_driver(A,&im2col_mat,height,width,channels,1);
+	
+    // cudaEventRecord(stop);
+    // cudaEventSynchronize(stop);
+    // cudaEventElapsedTime( & milliseconds, start, stop);
+
+    // printf("IM2COL: The elapsed time in gpu was %f ms\n", milliseconds);
+
+    if (im2col_mat == NULL)
 	{
 		fprintf(stderr, "pointwise_covDriver: Input matrix not returned after Im2Col\n");
 		exit(EXIT_FAILURE);
 	}
 
+
 	float* op = NULL;
+
+    // cudaEventRecord(start);
+
 	cuBlasGemm_rowMaj(d_kernels, im2col_mat,&op,op_channels,channels,channels,height*width);
-	*m_B = op;
+
+    // cudaEventRecord(stop);
+    // cudaEventSynchronize(stop);
+    // cudaEventElapsedTime( & milliseconds, start, stop);
+
+    // printf("GEMM: The elapsed time in gpu was %f ms\n", milliseconds);
+    
+	
+    *m_B = op;
 	cudaFree(im2col_mat); 
 	return 0;
 }
@@ -109,19 +136,19 @@ int pointwise_kernelsToDevice(float** kernels, float** m_B, int channels, int op
 }	
 
 
-int pointwise_conv_example()
+int pointwise_conv_example(int height = 32, int width = 32, int channels = 64, int op_channels = 64, int verification = 0)
 {	
 	float *d_A = NULL, *d_B = NULL, *h_A = NULL, *h_B = NULL, *h_C = NULL;
 
 	cudaError_t err = cudaSuccess;	//Error Codes for CUDA
 	int success = 0;
 	
-	int height,width,channels,op_channels;
+	// int height,width,channels,op_channels;
 
-    printf("Enter values of image height, width, channels :");
-    scanf("%d %d %d", & height, & width, & channels);
-    printf("Enter value of output channels: ");
-    scanf("%d", & op_channels);	
+ //    printf("Enter values of image height, width, channels :");
+ //    scanf("%d %d %d", & height, & width, & channels);
+ //    printf("Enter value of output channels: ");
+ //    scanf("%d", & op_channels);	
     
     //image dimensions
     int numElements = height * width * channels;
@@ -203,9 +230,21 @@ int pointwise_conv_example()
     	fprintf(stderr, "GPU does not contain Kernels\n");
     	exit(EXIT_FAILURE);
     }
+    cudaEvent_t start, stop;
+    float milliseconds = 0;
+
+    cudaEventCreate( & start);
+    cudaEventCreate( & stop);
+
+    cudaEventRecord(start);
 
     success = pointwise_convDriver(d_A,&d_B, d_kernels, height,width,channels,op_channels);
 
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime( & milliseconds, start, stop);
+
+    printf("Pointwise Conv: The elapsed time in GPU was %f ms\n", milliseconds);
 
 
     err = cudaMemcpy(h_B,d_B,converted_size,cudaMemcpyDeviceToHost);
@@ -215,38 +254,54 @@ int pointwise_conv_example()
 	    fprintf(stderr, "Failed to copy vector B from device to host (error code %s)!\n", cudaGetErrorString(err));
 	    exit(EXIT_FAILURE);
     }
-    printf("%d\n", success);
+    printf("%d (SUCCESS == 0)\n", success);
+
+
+
+
+    if(verification == 1)
+    {
+
+        cudaEventRecord(start);
+        int sum_element = 0, temp_value = 0;;
+        for (int l = 0; l < op_channels; ++l)
+        {
+            for (int i = 0; i < height; ++i)
+            {
+                for (int j = 0; j < width; ++j)
+                {
+                    sum_element = 0;
+                    for (int k = 0; k < channels; ++k)
+                    {   
+                        temp_value = *(*(kernels + l) + k);
+                        sum_element += h_A[k*height*width + i*width + j]* temp_value;
+                    }
+                    h_C[l*height*width + i*width + j] = sum_element;
+                }
+            }
+        }
+
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime( & milliseconds, start, stop);
+
+        printf("Pointwise Conv: The elapsed time in CPU was %f ms\n", milliseconds);
+
+        for (int i = 0; i < converted_numElements; ++i)
+        {
+            if(h_B[i] - h_C[i]>1e-3)
+            {
+                printf("PointWise Convolution Failed: CPU Not equal GPU!!");
+                exit(EXIT_FAILURE);
+            }
+        }
+        printf("PointWise Convolution success!!\n");
+
+    }
 
     //_________Verification________________
 
-    int sum_element = 0, temp_value = 0;;
-    for (int l = 0; l < op_channels; ++l)
-    {
-    	for (int i = 0; i < height; ++i)
-    	{
-    		for (int j = 0; j < width; ++j)
-    		{
-    			sum_element = 0;
-    			for (int k = 0; k < channels; ++k)
-    			{	
-    				temp_value = *(*(kernels + l) + k);
-    				sum_element += h_A[k*height*width + i*width + j]* temp_value;
-    			}
-    			h_C[l*height*width + i*width + j] = sum_element;
-    		}
-    	}
-    }
 
-    for (int i = 0; i < converted_numElements; ++i)
-    {
-    	if(h_B[i] != h_C[i])
-    	{
-    		printf("PointWise Convolution Failed: CPU Not equal GPU!!");
-    		exit(EXIT_FAILURE);
-    	}
-    }
-
-    printf("PointWise Convolution success!!\n");
 
     free(h_A);
     free(h_B);
