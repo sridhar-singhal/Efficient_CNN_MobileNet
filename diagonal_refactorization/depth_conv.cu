@@ -1,3 +1,4 @@
+%%cuda --name depth_conv.cu
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
@@ -17,13 +18,13 @@ __global__ void im2col(float *mat, float *col, int K, int channels, int height, 
     int tid_i = blockIdx.y*blockDim.y + threadIdx.y;	//row number
     int gid = tid_i*(height_col*width_col) + tid_j;    //global_id when reading row major form
     
-    if(tid_j < (height_col*width_col))	
+    if(tid_j < (height_col*width_col))
     {
         int c_im = blockIdx.y;
 
-        int c = gid/(height_col*width_col);			//row in which we are working on in the o/p matrix 
+        int c = gid/(height_col*width_col);//row in which we are working on in the o/p matrix 
         
-        int h_offset = (c/K)%K;						
+        int h_offset = (c/K)%K;
         int w_offset = c%K;
         int h =  (gid%(height_col*width_col))/width_col;
         int w = gid%width_col;
@@ -43,20 +44,20 @@ __global__ void im2col(float *mat, float *col, int K, int channels, int height, 
 
 __global__ void rearrange_weights(float* wt_mat, float* out_wt_mat, int K, int channels)
 {
-    int gid = blockIdx.x*blockDim.x + threadIdx.x;		//global Thread Id
+    int gid = blockIdx.x*blockDim.x + threadIdx.x;
     if(gid < channels*K*K)
     {
-      int row = gid/(K*K);  			//the row in the diagonalized weight matrix that this thread has to work on 
-      int off_set = row*(K*K*channels) + row*(K*K)+gid%(K*K); //Exact position where we have to put the value
-      out_wt_mat[off_set] = wt_mat[gid]; //assignment
+      int row = gid/(K*K);  //the row in the final output matrix that this thread has to work on 
+      int off_set = row*(K*K*channels) + row*(K*K) + gid%(K*K); //Exact position where we have to put the value
+      out_wt_mat[off_set] = wt_mat[gid];
       
     }
 }
 
 void gpuCublasMmul(cublasHandle_t handle,  float *A,  float *B, float *reference,  int m,  int k,  int n) {
-    int lda=m,ldb=k,ldc=m;
+    //int lda=m,ldb=k,ldc=m;
     //A = m*k, B = k*n, C = m*n
-    const float alf = 1;				
+    const float alf = 1;
     const float bet = 0;
     const float *alpha = &alf;
     const float *beta = &bet;
@@ -65,59 +66,109 @@ void gpuCublasMmul(cublasHandle_t handle,  float *A,  float *B, float *reference
     cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_N,n,m,k,alpha,B,n,A,k,beta,reference,n);    
 }
 
-void depth_conv( cublasHandle_t handle, float *mat, float *weights, float *out_mat, int stride, int channels, int K, int height, int width)
+void depth_conv(cublasHandle_t handle, float *mat, float *weights, float *out_mat, int stride, int channels, int K, int height, int width, float* im2col_time, float* diag_time, float* cublas_time)
 {
     int width_col = (width- K)/stride + 1;
     int height_col = (height - K)/stride + 1;
     size_t totalThreads = channels*K*K*height_col*width_col;            //total elements im2col operation
     size_t dim1 = channels*K*K;                                         //size of weight matrix
     size_t dim2 = channels*channels*K*K;                                //size of output weight matrix
-    size_t size = channels*height*width;								//Total number of data points in the input image
+    size_t size = channels*height*width;
 
-    float* d_mat = NULL;												//input image in device memory
-    cudaMalloc((void **)&d_mat, size*sizeof(float));
+    cudaError_t error = cudaSuccess;
+ 
+    float* d_mat = NULL;
+    error = cudaMalloc((void **)&d_mat, size*sizeof(float));
+    if(error != cudaSuccess) {
+        fprintf(stderr,"Some Error in cudaMalloc for d_mat %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
+ 
     cudaMemcpy(d_mat, mat, size*sizeof(float), cudaMemcpyHostToDevice);
-    float* d_col = NULL;												//output after im2col in device memory
-    cudaMalloc((void **)&d_col, totalThreads*sizeof(float));
+    float* d_col = NULL;
+    error = cudaMalloc((void **)&d_col, totalThreads*sizeof(float));
+    if(error != cudaSuccess) {
+        fprintf(stderr,"Some Error in cudaMalloc for d_col %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
     
+    cudaDeviceProp devp;
+    cudaGetDeviceProperties(&devp, 0);
+    printf("Warp Size: %d\n", devp.warpSize);
+    printf("Max number of threads per block: %d\n", devp.maxThreadsPerBlock);
+
+    float num_th = 128.0;
+    dim3 gridWeightDim(ceil((channels*K*K)/num_th), 1, 1);
+    dim3 blockWeightDim(num_th, 1, 1);
+ 
+ 	  dim3 gridDim(ceil((height_col*width_col)/32.0), channels, 1);
+    dim3 blockDim(32, K*K, 1);
+ 
+    float* d_wt_mat = NULL;
+    error = cudaMalloc((void **)&d_wt_mat, dim1*sizeof(float));
+    if(error != cudaSuccess) {
+        fprintf(stderr,"Some Error in cudaMalloc for d_wt_mat %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
     
-    float num_th = 128.0;												//number of threads in x direction of Block for weight rearrangement 
-    dim3 gridWeightDim(ceil((channels*K*K)/num_th), 1, 1);				//grid dimensions for rearrange_weights
-    dim3 blockWeightDim(num_th, 1, 1);									//block dimensions for rearrange_weights
- 
- 	dim3 gridDim(ceil((height_col*width_col)/32.0), channels, 1);		//grid dimensions for im2col
-    dim3 blockDim(32, K*K, 1);											//block dimensions for im2col
- 
-    float* d_wt_mat = NULL;												//weight matrix in the devo4ice memory
-    cudaMalloc((void **)&d_wt_mat, dim1*sizeof(float));
     cudaMemcpy(d_wt_mat, weights, dim1*sizeof(float), cudaMemcpyHostToDevice);
-	
-    float* d_out_wt_mat = NULL;											//output diagonalized weight matrix in device memory
-    cudaMalloc((void **)&d_out_wt_mat, dim2*sizeof(float));
+    float* d_out_wt_mat = NULL;
+    //float* out_wt_mat = (float *)calloc(dim2, sizeof(float));
+    error = cudaMalloc((void **)&d_out_wt_mat, dim2*sizeof(float));
+    if(error != cudaSuccess) {
+        fprintf(stderr,"Some Error in cudaMalloc for d_out_wt_mat %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
     
-    printf("rearrange_weights -- Grid : {%d, %d, %d} blocks. Blocks : {%d, %d, %d} threads.\n",
-    gridWeightDim.x, gridWeightDim.y, gridWeightDim.z, blockWeightDim.x, blockWeightDim.y, blockWeightDim.z);
+    //cudaMemcpy(d_out_wt_mat, out_wt_mat, dim2*sizeof(float), cudaMemcpyHostToDevice);
+
+    //printf("Grid : {%d, %d, %d} blocks. Blocks : {%d, %d, %d} threads.\n",
+    //gridWeightDim.x, gridWeightDim.y, gridWeightDim.z, blockWeightDim.x, blockWeightDim.y, blockWeightDim.z);
+
+    cudaEvent_t start3, stop3;
+    float milliseconds3 = 0;
+    cudaEventCreate( & start3);
+    cudaEventCreate( & stop3);
+    cudaEventRecord(start3);
 
     rearrange_weights<<<gridWeightDim, blockWeightDim>>>(d_wt_mat, d_out_wt_mat, K, channels);
-    float* rearranged_weights = (float *)malloc(dim2*sizeof(float));	//rearranged diagonalized weights in CPU memory
-    cudaMemcpy(rearranged_weights, d_out_wt_mat, dim2*sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaEventRecord(stop3);
+    cudaEventSynchronize(stop3);
+    cudaEventElapsedTime( & milliseconds3, start3, stop3);
+    printf("Weight Diagonalization: The elapsed time in GPU was %f ms\n", milliseconds3);
+    *diag_time = milliseconds3;
+
+
+    //float* rearranged_weights = (float *)malloc(dim2*sizeof(float));
+    //cudaMemcpy(rearranged_weights, d_out_wt_mat, dim2*sizeof(float), cudaMemcpyDeviceToHost);
     
-    printf("Output rearrangement for weights :\n");
-    for (int i = 0; i < (channels); ++i)
+    //printf("Output rearrangement:\n");
+    /*for (int i = 0; i < (channels); ++i)
     {
         for (int j = 0; j < (channels*K*K); ++j)
         {
             printf("%1.1f ", rearranged_weights[i*(channels*K*K) + j]);
         }
         printf("\n");
-    }
-	
-    cudaMemcpy(d_out_wt_mat, rearranged_weights, dim2*sizeof(float), cudaMemcpyHostToDevice);
+    }*/
+    //cudaMemcpy(d_out_wt_mat, rearranged_weights, dim2*sizeof(float), cudaMemcpyHostToDevice);
     
-    im2col<<<gridDim ,blockDim>>>(d_mat, d_col, K, channels, height, width, height_col, width_col, stride);
+    cudaEvent_t start1, stop1;
+    float milliseconds1 = 0;
+    cudaEventCreate( & start1);
+    cudaEventCreate( & stop1);
+    cudaEventRecord(start1);
 
-    float* col_mat = (float *)malloc(dim1*sizeof(float));
-    cudaMemcpy(col_mat, d_col, (totalThreads)*sizeof(float), cudaMemcpyDeviceToHost); //copied for printing
+    im2col<<<gridDim ,blockDim>>>(d_mat, d_col, K, channels, height, width, height_col, width_col, stride);
+    
+    cudaEventRecord(stop1);
+    cudaEventSynchronize(stop1);
+    cudaEventElapsedTime( & milliseconds1, start1, stop1);
+    printf("Im2Col : The elapsed time in GPU was %f ms\n", milliseconds1);
+    *im2col_time = milliseconds1;
+    /*float* col_mat = (float *)malloc(totalThreads*sizeof(float));
+    cudaMemcpy(col_mat, d_col, (totalThreads)*sizeof(float), cudaMemcpyDeviceToHost);
 
     printf("Printing after im2col operation\n");
     for (int i = 0; i < (channels*K*K); ++i)
@@ -130,47 +181,84 @@ void depth_conv( cublasHandle_t handle, float *mat, float *weights, float *out_m
     }
  
     cudaMemcpy(d_col, col_mat, totalThreads*sizeof(float), cudaMemcpyHostToDevice);
- 
-    
+    */
+    //printf("0\n");
     float* d_out_mat = NULL;
-    cudaMalloc((void **)&d_out_mat, channels*width_col*height_col*sizeof(float));        
+    error = cudaMalloc((void **)&d_out_mat, channels*width_col*height_col*sizeof(float));        
+    if(error != cudaSuccess) {
+        fprintf(stderr,"Some Error in cudaMalloc for d_out_mat %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
     
-	int nr_rows_A = channels;
+    //printf("2\n");
+    int nr_rows_A = channels;
     int nr_cols_A = channels*K*K;
     int nr_cols_B = height_col*width_col;
     
-	gpuCublasMmul(handle,d_out_wt_mat, d_col, d_out_mat, nr_rows_A, nr_cols_A, nr_cols_B); //multiply diagonalized weights with im2col 
+    cudaEvent_t start2, stop2;
+    float milliseconds2 = 0;
+    cudaEventCreate( & start2);
+    cudaEventCreate( & stop2);
+    cudaEventRecord(start2);
+
+	  gpuCublasMmul(handle,d_out_wt_mat, d_col, d_out_mat, nr_rows_A, nr_cols_A, nr_cols_B);
+
+    cudaEventRecord(stop2);
+    cudaEventSynchronize(stop2);
+    cudaEventElapsedTime( & milliseconds2, start2, stop2);
+    printf("cuBLAS : The elapsed time in GPU was %f ms\n", milliseconds2);
+    *cublas_time = milliseconds2;
+
+    cudaMemcpy(out_mat, d_out_mat, channels*width_col*height_col*sizeof(float), cudaMemcpyDeviceToHost);
     
-	cudaMemcpy(out_mat, d_out_mat, channels*width_col*height_col*sizeof(float), cudaMemcpyDeviceToHost); //store finally in out_mat
+    cudaFree(d_out_mat);
+    cudaFree(d_mat);
+    cudaFree(d_col);
+    cudaFree(d_wt_mat);
+    cudaFree(d_out_wt_mat);
+    cudaFree(d_out_mat);
+    
+    //free(rearranged_weights);
+    //free(col_mat);
 }
 
 int main()
 {
     int K, height, width, stride, channels;	//kernel size , height of image, width of image, stride, number of channels in the input
-    printf("Enter kernel size , height of image, width of image, stride, cnumber of channels in the input\n");
+    printf("Enter kernel size , height of image, width of image, stride, number of channels in the input\n");
     
     //K SHOULD NOT BE LARGER THAN 5, NOT NEEDED IN THIS ARCHITECTURE ANYWAY. OURS IS CONSTRAINED BY BLOCK DIMENSIONS
     // 6*6*32 > 1024
+
+    float im2_col_total = 0;
+    float diag_total = 0;
+    float cublas_total = 0;
  
+    float im2col_time = 0;
+    float diag_time = 0;
+    float cublas_time = 0;
+
     scanf("%d",&K);
     scanf("%d",&height);
     scanf("%d",&width);
     scanf("%d",&stride);
     scanf("%d",&channels);
-    // K = 2; height = 6; width = 6; stride = 2; channels = 4;
+    /* height = 50; width = 50; channels = 12;
+    stride = 1;channels = 8;K = 3;height = 1024; width = 1024; */
     
-    int group_size = 2;													//number of channels in a group 
-    int num = ceil(channels/group_size);								//number of groups
-    
-    int width_col = (width- K)/stride + 1;			//effective width, that is the number of steps the kernel can be shifted along the width
-    int height_col = (height - K)/stride + 1;		////effective height, that is the number of steps the kernel can be shifted along the height
+    int group_size = 8;//number of channels in a group 
+    //int num = ceil(channels/group_size);
+    //printf("num = %d\n",num);
+    int width_col = (width- K)/stride + 1;
+    int height_col = (height - K)/stride + 1;
     
     float* wt_mat = (float *)malloc((channels*K*K)*sizeof(float));
     for(int i = 0; i < channels*K*K; i ++)
     {
-		  wt_mat[i] = i;						//initializing weight matrix with consecutive natural numbers
+		  wt_mat[i] = 1;
     }
     
+    /*
     printf("Weight Matrix \n");
     for(int i = 0; i < channels; i++)
     {
@@ -178,43 +266,69 @@ int main()
       {
       	for(int k = 0; k < K;k++)
         {
-        	printf("%1.1f ",wt_mat[i*K*K + j*K + k]);		//printing the weight matrix 
+        	printf("%1.1f ",wt_mat[i*K*K + j*K + k]);
         }
         	printf("\n");
       }
       printf("\n");
     }
+    */
+ 
+ 	  size_t size = channels*height*width;
+    float* input_mat = (float *)malloc(size*sizeof(float));
     
- 	size_t size = channels*height*width;
-    float* input_mat = (float *)malloc(size*5*sizeof(float));
-    
-    for(int i = 0; i < size*5; i++)
+    for(int i = 0; i < size; i++)
     {
-    		input_mat[i] = i;						//initializing input image matrix with consecutive natural numbers
+    		input_mat[i] = 1;
     }
  
     cublasHandle_t handle1;
-    cublasCreate(&handle1);							//handle creation for using cuBLAS method in gpuCublasMmul
+    //printf("Handle declared\n");
+    cublasCreate(&handle1);
+    //printf("Handle created\n");
     
     float* out_mat = (float *)malloc(channels*height_col*width_col*sizeof(float));
 
-    int input_offset;						//offset to be provided to input image according to group number
-    int weight_offset;						//offset to be provided to weight matrix according to group number
-    int output_offset;						//offset to be provided to final output matrix according to group number
-    int current_channels = group_size;		//number of channels in the current group, which is different only for possibly the last group
+    //depth_conv(handle1, input_mat, wt_mat, out_mat, stride, channels, K,  height, width);
     
+    int input_offset;
+    int weight_offset;
+    int output_offset;
+    int current_channels = group_size;
+    
+    cudaEvent_t start, stop;
+    float milliseconds = 0;
+
+    cudaEventCreate( & start);
+    cudaEventCreate( & stop);
+
+    cudaEventRecord(start);
+    printf("Entering\n");
+
     for(int i = 0; i < channels; i+= group_size)
     {
     	input_offset = height*width*i;
-		weight_offset = K*K*i;
-		output_offset = height_col*width_col*i;
-		if ((channels - i) < group_size)
-			current_channels = channels - i;
-	
-		depth_conv(handle1, input_mat+input_offset, wt_mat+weight_offset, out_mat+output_offset , stride, current_channels, K,  height, width);
+      weight_offset = K*K*i;
+      output_offset = height_col*width_col*i;
+      if ((channels - i) < group_size)
+      	current_channels = channels - i;
+      
+      depth_conv(handle1, input_mat+input_offset, wt_mat+weight_offset, out_mat+output_offset , stride, current_channels, K,  height, width, &im2col_time, &diag_time, &cublas_time);
+      im2_col_total += im2col_time;
+      diag_total += diag_time;
+      cublas_total += cublas_time;
     }
-    
-    printf("Printing the input image\n");
+    printf("Left\n");
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime( & milliseconds, start, stop);
+
+    printf("Depthwise Conv: The elapsed time in GPU was %f ms\n", milliseconds);
+    printf("Im2Col: The elapsed time in GPU was %f ms\n", im2_col_total);
+    printf("Diagonalwise: The elapsed time in GPU was %f ms\n", diag_total);
+    printf("CuBlas GEMM: The elapsed time in GPU was %f ms\n", cublas_total);    
+
+    /*printf("Printing the input image\n");
     for (int i = 0; i < channels; ++i)
     {
       for (int j = 0; j < height; ++j)
@@ -231,10 +345,16 @@ int main()
     printf("Printing the output matrix\n");
     for(int i = 0; i < channels; i++)
     {
-		for(int j = 0; j < height_col*width_col; j++)
-		{
-			printf("%1.1f ", out_mat[i*height_col*width_col + j]);
-		}
-		printf("\n");
-    }
-} 
+    	for(int j = 0; j < height_col*width_col; j++)
+      {
+      	printf("%1.1f ", out_mat[i*height_col*width_col + j]);
+      }
+      printf("\n");
+    }*/
+    
+
+    free(wt_mat);
+    free(input_mat);
+    free(out_mat);
+    
+}
