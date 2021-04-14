@@ -69,7 +69,7 @@ void gpuCublasMmul(float *A,  float *B, float *reference,  int m,  int k,  int n
     cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_N,n,m,k,alpha,B,n,A,k,beta,reference,n);    
 }
 
-void depth_conv(float *mat, float *weights, float *out_mat, int stride, int channels, int K, int height, int width, float* im2col_time, float* diag_time, float* cublas_time)
+void depth_conv(float *d_mat, float * d_wt_mat, float **out_mat, int stride, int channels, int K, int height, int width, float* im2col_time, float* diag_time, float* cublas_time)
 {
     int width_col = (width- K)/stride + 1;
     int height_col = (height - K)/stride + 1;
@@ -78,27 +78,37 @@ void depth_conv(float *mat, float *weights, float *out_mat, int stride, int chan
     size_t dim2 = channels*channels*K*K;                                //size of output weight matrix
     size_t size = channels*height*width;
 
+    //mat is copied to d_mat and d_mat is used ahead.
     cudaError_t error = cudaSuccess;
  
-    float* d_mat = NULL;
-    error = cudaMalloc((void **)&d_mat, size*sizeof(float));
-    if(error != cudaSuccess) {
-        fprintf(stderr,"Some Error in cudaMalloc for d_mat %s\n",cudaGetErrorString(error));
-        exit(EXIT_FAILURE);
+
+    if(d_mat == NULL)
+    {
+        fprintf(stderr, "depth_convDriver: Input Matrix memory not allocated\n");
+        exit(EXIT_FAILURE);       
     }
+
+    // float* d_mat = NULL;
+    // error = cudaMalloc((void **)&d_mat, size*sizeof(float));
+    // if(error != cudaSuccess) {
+    //     fprintf(stderr,"Some Error in cudaMalloc for d_mat %s\n",cudaGetErrorString(error));
+    //     exit(EXIT_FAILURE);
+    // }
  
-    cudaMemcpy(d_mat, mat, size*sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_mat, mat, size*sizeof(float), cudaMemcpyHostToDevice);
+    
     float* d_col = NULL;
+
     error = cudaMalloc((void **)&d_col, totalThreads*sizeof(float));
     if(error != cudaSuccess) {
-        fprintf(stderr,"Some Error in cudaMalloc for d_col %s\n",cudaGetErrorString(error));
+        fprintf(stderr,"depth_convDriver: cudaMalloc for d_col %s\n",cudaGetErrorString(error));
         exit(EXIT_FAILURE);
     }
     
     cudaDeviceProp devp;
     cudaGetDeviceProperties(&devp, 0);
-    printf("Warp Size: %d\n", devp.warpSize);
-    printf("Max number of threads per block: %d\n", devp.maxThreadsPerBlock);
+    // printf("Warp Size: %d\n", devp.warpSize);
+    // printf("Max number of threads per block: %d\n", devp.maxThreadsPerBlock);
 
     float num_th = 128.0;
     dim3 gridWeightDim(ceil((channels*K*K)/num_th), 1, 1);
@@ -110,16 +120,22 @@ void depth_conv(float *mat, float *weights, float *out_mat, int stride, int chan
     float* d_wt_mat = NULL;
     error = cudaMalloc((void **)&d_wt_mat, dim1*sizeof(float));
     if(error != cudaSuccess) {
-        fprintf(stderr,"Some Error in cudaMalloc for d_wt_mat %s\n",cudaGetErrorString(error));
+        fprintf(stderr,"depth_convDriver: Some Error in cudaMalloc for d_wt_mat %s\n",cudaGetErrorString(error));
         exit(EXIT_FAILURE);
     }
     
-    cudaMemcpy(d_wt_mat, weights, dim1*sizeof(float), cudaMemcpyHostToDevice);
+    //weights are in a single matrix, row major. 
+    //Assumed to be available in system host RAM. Changed to device
+    // cudaMemcpy(d_wt_mat, weights, dim1*sizeof(float), cudaMemcpyHostToDevice);
+    if (d_wt_mat == NULL)
+    {
+        fprintf(stderr, "depth_convDriver: No Kernel Paramaters Provided\n");
+    }
     float* d_out_wt_mat = NULL;
     //float* out_wt_mat = (float *)calloc(dim2, sizeof(float));
     error = cudaMalloc((void **)&d_out_wt_mat, dim2*sizeof(float));
     if(error != cudaSuccess) {
-        fprintf(stderr,"Some Error in cudaMalloc for d_out_wt_mat %s\n",cudaGetErrorString(error));
+        fprintf(stderr,"depth_convDriver: Some Error in cudaMalloc for d_out_wt_mat %s\n",cudaGetErrorString(error));
         exit(EXIT_FAILURE);
     }
     
@@ -189,7 +205,7 @@ void depth_conv(float *mat, float *weights, float *out_mat, int stride, int chan
     float* d_out_mat = NULL;
     error = cudaMalloc((void **)&d_out_mat, channels*width_col*height_col*sizeof(float));        
     if(error != cudaSuccess) {
-        fprintf(stderr,"Some Error in cudaMalloc for d_out_mat %s\n",cudaGetErrorString(error));
+        fprintf(stderr,"depth_convDriver: Error in cudaMalloc for Output Matrix (d_out_mat) %s\n",cudaGetErrorString(error));
         exit(EXIT_FAILURE);
     }
     
@@ -213,14 +229,16 @@ void depth_conv(float *mat, float *weights, float *out_mat, int stride, int chan
     printf("cuBLAS : The elapsed time in GPU was %f ms\n", milliseconds2);
     *cublas_time = milliseconds2;
 
-    cudaMemcpy(out_mat, d_out_mat, channels*width_col*height_col*sizeof(float), cudaMemcpyDeviceToHost);
+    // cudaMemcpy(out_mat, d_out_mat, channels*width_col*height_col*sizeof(float), cudaMemcpyDeviceToHost);
     
-    cudaFree(d_out_mat);
-    cudaFree(d_mat);
+    // cudaFree(d_out_mat);
+    // cudaFree(d_mat); //It is the duty of the input kernel to free the memory.
     cudaFree(d_col);
-    cudaFree(d_wt_mat);
+    // cudaFree(d_wt_mat);
     cudaFree(d_out_wt_mat);
-    cudaFree(d_out_mat);
+    // cudaFree(d_out_mat);
+    *out_mat = d_out_mat;
+    //d_out_mat is the output matrix allocated in the memory
     
     //free(rearranged_weights);
     //free(col_mat);
@@ -233,6 +251,7 @@ int main()
     
     //K SHOULD NOT BE LARGER THAN 5, NOT NEEDED IN THIS ARCHITECTURE ANYWAY. OURS IS CONSTRAINED BY BLOCK DIMENSIONS
     // 6*6*32 > 1024
+    cudaError_t error = cudaSuccess;
 
     float im2_col_total = 0;
     float diag_total = 0;
@@ -281,14 +300,28 @@ int main()
       size_t size = channels*height*width;
     float* input_mat = (float *)malloc(size*sizeof(float));
     
+    float* d_input_mat = NULL;
+    error = cudaMalloc((void **)&d_input_mat, size*sizeof(float));        
+    if(error != cudaSuccess) {
+        fprintf(stderr,"depth_convExample: Error in cudaMalloc for Input Matrix %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
+
     for(int i = 0; i < size; i++)
     {
             input_mat[i] = 1;
     }
  
+    error = cudaMemcpy(d_input_mat, input_mat, size*sizeof(float), cudaMemcpyHostToDevice);
+    if(error != cudaSuccess) {
+        fprintf(stderr,"depth_convExample: Error in copying input matrix to Device %s\n",cudaGetErrorString(error));
+        exit(EXIT_FAILURE);
+    }
+
 
     
     float* out_mat = (float *)malloc(channels*height_col*width_col*sizeof(float));
+    float* d_out_mat = NULL;    
 
     //depth_conv(handle1, input_mat, wt_mat, out_mat, stride, channels, K,  height, width);
     
