@@ -74,9 +74,9 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
     int width_col = (width- K)/stride + 1;
     int height_col = (height - K)/stride + 1;
     size_t totalThreads = channels*K*K*height_col*width_col;            //total elements im2col operation
-    size_t dim1 = channels*K*K;                                         //size of weight matrix
+    // size_t dim1 = channels*K*K;                                         //size of weight matrix
     size_t dim2 = channels*channels*K*K;                                //size of output weight matrix
-    size_t size = channels*height*width;
+    // size_t size = channels*height*width;
 
     //mat is copied to d_mat and d_mat is used ahead.
     cudaError_t error = cudaSuccess;
@@ -339,7 +339,7 @@ int depth_convDriver(float* d_input_mat, float* d_wt_mat, float ** out_mat, int 
 
 
 //Soon to become example code
-int main()
+int depth_conv_example()
 {
     int K, height, width, stride, channels; //kernel size , height of image, width of image, stride, number of channels in the input
     printf("Enter kernel size , height of image, width of image, stride, number of channels in the input\n");
@@ -467,5 +467,6 @@ int main()
     cudaFree(d_input_mat);
     cudaFree(d_out_mat);
     cudaFree(d_wt_mat);
+    return 0;
     
 }
