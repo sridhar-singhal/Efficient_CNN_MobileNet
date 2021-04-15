@@ -1,11 +1,14 @@
 # Efficient_CNN_MobileNet
 Efficient CNN Implementation of Mobile Net Architectures using Diagonalization
 
-Guidlines:
+## Forward Pass
+Compile using the command 
+nvcc -o op -lcublas main.cu
+The Makefile does not work yet
 
-Create Working Directories for each person. Remember to pull before you push. Alsp remember to commit to your local branch before you pull else you could lose all preogress. Else all the collective code could be potentially wiped out. I would recommend creating branches and working on them. Also, work and commit to your own branches and do not touch the main. 
+To run the program 
+./op
 
-Work only in your own folder, it is a temporary place for you to work. Later everything shall be shifted to final_library with integration. 
 
 
 ## CNN Inferencing
@@ -21,6 +24,31 @@ The **eval.cpp** is a standalone script which can be utlized for image preproces
 The **parse.cpp** is a parsing mechanism for prototxt scripts appropriately converted to text files through the help of any json parser.
 
 
+## File Organaziation
+main
+|-kernels
+	|- pooling
+		|-pooling_avg.cuh # Library to include for pooling average
+		|-library_test_avgPooling.cu # Example for pooling_avg
+	|-pointwise_Conv
+		|-pointwise_conv.cuh # Library to include for pointwise convolution, do not include if conv3D is included
+		|-library_test_pointwiseConv.cu #Example code
+	|-im2col_gemm
+		|-conv3D.cuh # Library to include for 3D convolution. Also contains depthconv, depth conv
+	|-diagonal_refactorization
+		|-depth_conv.cuh #Library to include for depthwise convolution, do not include if conv3D is included.
+		|-library_test_depth_conv.cu #Example code
+
+|-forward
+	|- forward_pass.cuh # Library for forward pass. Architecture can be modified from here
+|-CNN_inferencing
+|-Misc Files #Used by developers to submit codes.
+
+## GUIDELINES (for develeopers)
+
+Create Working Directories for each person. Remember to pull before you push. Alsp remember to commit to your local branch before you pull else you could lose all preogress. Else all the collective code could be potentially wiped out. I would recommend creating branches and working on them. Also, work and commit to your own branches and do not touch the main. 
+
+Work only in your own folder, it is a temporary place for you to work. Later everything shall be shifted to final_library with integration. 
 ## Misc Links
 
 Links
