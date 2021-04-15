@@ -15,6 +15,6 @@ The **eval.cpp** is a standalone script which can be utlized for image preproces
 <br/>
 
 The **parse.cpp** is a parsing mechanism for prototxt scripts appropriately converted to text files through the help of any json parser. 
-- To use the parsing mechanism, process the prototxt file and rewrite the convolutional layers as *kernel_name output_size file_size pad stride* with one layer in every line. 
+- To use the parsing mechanism, process the prototxt file and rewrite the convolutional layers as `kernel_name output_size file_size pad stride` with one layer in every line. 
 - The parse mechanism has been written for a single layer but can be easily extended to multiple layers. 
 - The script is to be used as a parser for calling the user-defined kernels in accordance with the specified model architecture.
