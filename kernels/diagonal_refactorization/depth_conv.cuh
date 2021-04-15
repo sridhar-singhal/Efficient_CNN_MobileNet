@@ -147,7 +147,7 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
     cudaEventRecord(stop3);
     cudaEventSynchronize(stop3);
     cudaEventElapsedTime( & milliseconds3, start3, stop3);
-    printf("Weight Diagonalization: The elapsed time in GPU was %f ms\n", milliseconds3);
+    // printf("Weight Diagonalization: The elapsed time in GPU was %f ms\n", milliseconds3);
     *diag_time = milliseconds3;
 
 
@@ -176,7 +176,7 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
     cudaEventRecord(stop1);
     cudaEventSynchronize(stop1);
     cudaEventElapsedTime( & milliseconds1, start1, stop1);
-    printf("Im2Col : The elapsed time in GPU was %f ms\n", milliseconds1);
+    // printf("Im2Col : The elapsed time in GPU was %f ms\n", milliseconds1);
     *im2col_time = milliseconds1;
     /*float* col_mat = (float *)malloc(totalThreads*sizeof(float));
     cudaMemcpy(col_mat, d_col, (totalThreads)*sizeof(float), cudaMemcpyDeviceToHost);
@@ -218,7 +218,7 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
     cudaEventRecord(stop2);
     cudaEventSynchronize(stop2);
     cudaEventElapsedTime( & milliseconds2, start2, stop2);
-    printf("cuBLAS : The elapsed time in GPU was %f ms\n", milliseconds2);
+    // printf("cuBLAS : The elapsed time in GPU was %f ms\n", milliseconds2);
     *cublas_time = milliseconds2;
 
     // cudaMemcpy(out_mat, d_out_mat, channels*width_col*height_col*sizeof(float), cudaMemcpyDeviceToHost);
@@ -297,7 +297,7 @@ int depth_convDriver(float* d_input_mat, float* d_wt_mat, float ** out_mat, int 
     cudaEventCreate( & stop);
 
     cudaEventRecord(start);
-    printf("Entering\n");
+    // printf("Entering\n");
 
     for(int i = 0; i < channels; i+= group_size)
     {
@@ -315,16 +315,16 @@ int depth_convDriver(float* d_input_mat, float* d_wt_mat, float ** out_mat, int 
       cublas_total += cublas_time;
     }
 
-    printf("Left\n");
+    // printf("Left\n");
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime( & milliseconds, start, stop);
 
 
-    printf("Depthwise Conv: The elapsed time in GPU was %f ms\n", milliseconds);
-    printf("Im2Col: The elapsed time in GPU was %f ms\n", im2_col_total);
-    printf("Diagonalwise: The elapsed time in GPU was %f ms\n", diag_total);
-    printf("CuBlas GEMM: The elapsed time in GPU was %f ms\n", cublas_total);    
+    // printf("Depthwise Conv: The elapsed time in GPU was %f ms\n", milliseconds);
+    // printf("Im2Col: The elapsed time in GPU was %f ms\n", im2_col_total);
+    // printf("Diagonalwise: The elapsed time in GPU was %f ms\n", diag_total);
+    // printf("CuBlas GEMM: The elapsed time in GPU was %f ms\n", cublas_total);    
  
     return 0;   
 }

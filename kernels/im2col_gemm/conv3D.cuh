@@ -23,8 +23,8 @@ void conv3d(float* d_input_mat, float* d_wt_mat, float** out_mat, int height, in
     int height_col = ceil(float((height - K))/stride) + 1;
     size_t totalThreads = channels*K*K*height_col*width_col;
 
-    printf("op_width = %d\n", width_col);
-    printf("op_height = %d\n", height_col);
+    // printf("op_width = %d\n", width_col);
+    // printf("op_height = %d\n", height_col);
 
     float* d_out_mat = NULL;    
 
