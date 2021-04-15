@@ -190,7 +190,7 @@ int main(void)
           }
 
           if(arr[i][j]!=h_C[j*length1 + i]){
-              f=1;
+              //f=1;
           }
       }
   }
