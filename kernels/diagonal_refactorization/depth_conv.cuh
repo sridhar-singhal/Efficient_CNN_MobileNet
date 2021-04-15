@@ -88,14 +88,6 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
         exit(EXIT_FAILURE);       
     }
 
-    // float* d_mat = NULL;
-    // error = cudaMalloc((void **)&d_mat, size*sizeof(float));
-    // if(error != cudaSuccess) {
-    //     fprintf(stderr,"Some Error in cudaMalloc for d_mat %s\n",cudaGetErrorString(error));
-    //     exit(EXIT_FAILURE);
-    // }
- 
-    // cudaMemcpy(d_mat, mat, size*sizeof(float), cudaMemcpyHostToDevice);
     
     float* d_col = NULL;
 
@@ -114,7 +106,7 @@ void depth_conv(float *d_mat, float * d_wt_mat, float *out_mat, int stride, int 
     dim3 gridWeightDim(ceil((channels*K*K)/num_th), 1, 1);
     dim3 blockWeightDim(num_th, 1, 1);
  
-      dim3 gridDim(ceil((height_col*width_col)/32.0), channels, 1);
+    dim3 gridDim(ceil((height_col*width_col)/32.0), channels, 1);
     dim3 blockDim(32, K*K, 1);
  
     // float* d_wt_mat = NULL;
